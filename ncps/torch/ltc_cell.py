@@ -64,6 +64,7 @@ class LTCCell(nn.Module):
             "sensory_w": (0.001, 1.0),
             "sensory_sigma": (3, 8),
             "sensory_mu": (0.3, 0.8),
+            "tau_system": (0.1, 1.0)
         }
         self._wiring = wiring
         self._input_mapping = input_mapping
@@ -172,6 +173,14 @@ class LTCCell(nn.Module):
             requires_grad=False,
         )
 
+        # Create a vector to store tau system values. It is just for
+        # storing calculated values, these values aren't learned.
+        self._params["tau_system"] = self.add_weight(
+            name="tau_system",
+            init_value=self._get_init_value((self.state_size,), "tau_system"),
+            requires_grad=False
+        )
+
         if self._input_mapping in ["affine", "linear"]:
             self._params["input_w"] = self.add_weight(
                 name="input_w",
@@ -220,9 +229,9 @@ class LTCCell(nn.Module):
         w_denominator_sensory = torch.sum(sensory_w_activation, dim=1)
 
         # cm/t is loop invariant
-        cm_t = self.make_positive_fn(self._params["cm"]) / (
-            elapsed_time / self._ode_unfolds
-        )
+        cm = self.make_positive_fn(self._params["cm"])
+        delta = elapsed_time / self._ode_unfolds
+        cm_t = cm/delta
 
         # Unfold the multiply ODE multiple times into one RNN step
         w_param = self.make_positive_fn(self._params["w"])
@@ -240,6 +249,10 @@ class LTCCell(nn.Module):
             w_denominator = torch.sum(w_activation, dim=1) + w_denominator_sensory
 
             gleak = self.make_positive_fn(self._params["gleak"])
+
+            tau_system = 1.0 / ((gleak/cm) + (w_denominator/cm))
+            self._params["tau_system"] = tau_system
+
             numerator = cm_t * v_pre + gleak * self._params["vleak"] + w_numerator
             denominator = cm_t + gleak + w_denominator
 
