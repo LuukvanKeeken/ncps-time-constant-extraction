@@ -126,6 +126,13 @@ class CfCCell(nn.Module):
             self.ff2 = nn.Linear(cat_shape, hidden_size)
             self.time_a = nn.Linear(cat_shape, hidden_size)
             self.time_b = nn.Linear(cat_shape, hidden_size)
+
+        # Create a vector to store tau system values. It is just for
+        # storing calculated values, these values aren't learned.
+        self.tau_system = torch.nn.Parameter(
+            torch.ones((self.hidden_size,)), requires_grad=False
+        )
+
         self.init_weights()
 
     def init_weights(self):
@@ -149,6 +156,11 @@ class CfCCell(nn.Module):
                 * ff1
                 + self.A
             )
+
+            # This calculation of the tau system seems to be in accordance
+            # with equations 1, 2, and 3 in "Closed-form Continuous-time
+            # Neural Networks".
+            self.tau_system = 1.0 / (torch.abs(self.w_tau) + torch.abs(ff1))
         else:
             # Cfc
             if self.sparsity_mask is not None:

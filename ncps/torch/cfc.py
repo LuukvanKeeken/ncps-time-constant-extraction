@@ -35,6 +35,7 @@ class CfC(nn.Module):
         backbone_units: Optional[int] = None,
         backbone_layers: Optional[int] = None,
         backbone_dropout: Optional[int] = None,
+        track_tau_system: bool = False,
     ):
         """Applies a `Closed-form Continuous-time <https://arxiv.org/abs/2106.13898>`_ RNN to an input sequence.
 
@@ -66,6 +67,7 @@ class CfC(nn.Module):
         self.proj_size = proj_size
         self.batch_first = batch_first
         self.return_sequences = return_sequences
+        self.track_tau_system = track_tau_system
 
         if isinstance(units, ncps.wirings.Wiring):
             self.wired_mode = True
@@ -117,6 +119,8 @@ class CfC(nn.Module):
         :param timespans:
         :return: A pair (output, hx), where output and hx the final hidden state of the RNN
         """
+        tau_tracker = []
+
         device = input.device
         is_batched = input.dim() == 3
         batch_dim = 0 if self.batch_first else 1
@@ -171,6 +175,10 @@ class CfC(nn.Module):
             if self.use_mixed:
                 h_state, c_state = self.lstm(inputs, (h_state, c_state))
             h_out, h_state = self.rnn_cell.forward(inputs, h_state, ts)
+
+            if self.track_tau_system:
+                tau_tracker.append(self.rnn_cell.tau_system.squeeze().tolist())
+
             if self.return_sequences:
                 output_sequence.append(self.fc(h_out))
 
@@ -186,4 +194,7 @@ class CfC(nn.Module):
             readout = readout.squeeze(batch_dim)
             hx = (h_state[0], c_state[0]) if self.use_mixed else h_state[0]
 
-        return readout, hx
+        if self.track_tau_system:
+            return readout, hx, tau_tracker
+        else:
+            return readout, hx
