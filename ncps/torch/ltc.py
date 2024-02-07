@@ -15,9 +15,9 @@ import numpy as np
 import torch
 from torch import nn
 from typing import Optional, Union
-import ncps
-from . import CfCCell, LTCCell
-from .lstm import LSTMCell
+from ncps_time_constant_extraction.ncps.wirings import Wiring, FullyConnected
+from ncps_time_constant_extraction.ncps.torch.ltc_cell import LTCCell
+from ncps_time_constant_extraction.ncps.torch.lstm import LSTMCell
 
 
 class LTC(nn.Module):
@@ -33,6 +33,7 @@ class LTC(nn.Module):
         ode_unfolds=6,
         epsilon=1e-8,
         implicit_param_constraints=True,
+        track_tau_system: bool = False,
     ):
         """Applies a `Liquid time-constant (LTC) <https://ojs.aaai.org/index.php/AAAI/article/view/16936>`_ RNN to an input sequence.
 
@@ -78,11 +79,12 @@ class LTC(nn.Module):
         self.wiring_or_units = units
         self.batch_first = batch_first
         self.return_sequences = return_sequences
+        self.track_tau_system = track_tau_system
 
-        if isinstance(units, ncps.wirings.Wiring):
+        if isinstance(units, Wiring):
             wiring = units
         else:
-            wiring = ncps.wirings.FullyConnected(units)
+            wiring = FullyConnected(units)
         self.rnn_cell = LTCCell(
             wiring=wiring,
             in_features=input_size,
@@ -129,6 +131,11 @@ class LTC(nn.Module):
         :param timespans:
         :return: A pair (output, hx), where output and hx the final hidden state of the RNN
         """
+
+        # Initialize a list for storing the system tau values.
+        if self.track_tau_system:
+            tau_tracker = []
+
         device = input.device
         is_batched = input.dim() == 3
         batch_dim = 0 if self.batch_first else 1
@@ -183,6 +190,10 @@ class LTC(nn.Module):
             if self.use_mixed:
                 h_state, c_state = self.lstm(inputs, (h_state, c_state))
             h_out, h_state = self.rnn_cell.forward(inputs, h_state, ts)
+
+            if self.track_tau_system:
+                tau_tracker.append(self.rnn_cell._params["tau_system"].squeeze().tolist())
+
             if self.return_sequences:
                 output_sequence.append(h_out)
 
@@ -198,4 +209,8 @@ class LTC(nn.Module):
             readout = readout.squeeze(batch_dim)
             hx = (h_state[0], c_state[0]) if self.use_mixed else h_state[0]
 
-        return readout, hx
+
+        if self.track_tau_system:
+            return readout, hx, tau_tracker
+        else:
+            return readout, hx

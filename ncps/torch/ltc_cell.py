@@ -250,14 +250,17 @@ class LTCCell(nn.Module):
 
             gleak = self.make_positive_fn(self._params["gleak"])
 
-            tau_system = 1.0 / ((gleak/cm) + (w_denominator/cm))
-            self._params["tau_system"] = tau_system
-
             numerator = cm_t * v_pre + gleak * self._params["vleak"] + w_numerator
             denominator = cm_t + gleak + w_denominator
 
             # Avoid dividing by 0
             v_pre = numerator / (denominator + self._epsilon)
+
+        # Calculate the system tau according to equation
+        # 2 in "Neural circuit policies enabling auditable autonomy".
+        tau_system_inv = (gleak + w_denominator) / cm
+        tau_system = 1.0 / tau_system_inv
+        self._params["tau_system"] = tau_system
 
         return v_pre
 
