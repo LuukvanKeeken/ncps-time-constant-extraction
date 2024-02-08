@@ -160,7 +160,7 @@ class CfCCell(nn.Module):
             # This calculation of the tau system seems to be in accordance
             # with equations 1, 2, and 3 in "Closed-form Continuous-time
             # Neural Networks".
-            self.tau_system = 1.0 / (torch.abs(self.w_tau) + torch.abs(ff1))
+            self.tau_system.data = 1.0 / (torch.abs(self.w_tau) + torch.abs(ff1))
         else:
             # Cfc
             if self.sparsity_mask is not None:
