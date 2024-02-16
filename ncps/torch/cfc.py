@@ -16,7 +16,7 @@
 import torch
 from torch import nn
 from typing import Optional, Union
-import ncps
+import ncps_time_constant_extraction.ncps as ncps
 from . import CfCCell, WiredCfCCell
 from .lstm import LSTMCell
 
@@ -195,6 +195,8 @@ class CfC(nn.Module):
             hx = (h_state[0], c_state[0]) if self.use_mixed else h_state[0]
 
         if self.track_tau_system:
+            if len(tau_tracker) == 1:
+                tau_tracker = tau_tracker[0]
             return readout, hx, tau_tracker
         else:
             return readout, hx
