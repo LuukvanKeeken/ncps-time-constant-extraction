@@ -68,7 +68,7 @@ class CfCCell(nn.Module):
 
         self.input_size = input_size
         self.hidden_size = hidden_size
-        allowed_modes = ["default", "pure", "no_gate"]
+        allowed_modes = ["default", "pure", "no_gate", "neuromodulated"]
         if mode not in allowed_modes:
             raise ValueError(
                 f"Unknown mode '{mode}', valid options are {str(allowed_modes)}"
@@ -118,19 +118,23 @@ class CfCCell(nn.Module):
         )
 
         self.ff1 = nn.Linear(cat_shape, hidden_size)
-        if self.mode == "pure":
+        if self.mode == "pure" or self.mode == "neuromodulated":
             self.w_tau = torch.nn.Parameter(
                 data=torch.zeros(1, self.hidden_size), requires_grad=True
             )
             self.A = torch.nn.Parameter(
                 data=torch.ones(1, self.hidden_size), requires_grad=True
             )
-        elif self.mode == "neuromodulated":
-            layer_list = []
-            for i in range(len(neuromod_network_dims) - 1):
-                layer_list.append(nn.Linear(neuromod_network_dims[i], neuromod_network_dims[i + 1]))
-                layer_list.append(nn.Linear(neuromod_network_activation))
-            self.neuromod = nn.Sequential(*layer_list)
+
+            if self.mode == "neuromodulated":
+                assert neuromod_network_dims is not None, "Neuromodulation network dimensions must be set"
+                assert neuromod_network_dims[-1] == hidden_size, "Last layer of neuromodulation network must have the same size as the hidden state"
+                
+                layer_list = []
+                for i in range(len(neuromod_network_dims) - 1):
+                    layer_list.append(nn.Linear(neuromod_network_dims[i], neuromod_network_dims[i + 1]))
+                    layer_list.append(neuromod_network_activation())
+                self.neuromod = nn.Sequential(*layer_list)
         else:
             self.ff2 = nn.Linear(cat_shape, hidden_size)
             self.time_a = nn.Linear(cat_shape, hidden_size)
@@ -149,43 +153,87 @@ class CfCCell(nn.Module):
             if w.dim() == 2 and w.requires_grad:
                 torch.nn.init.xavier_uniform_(w)
 
+
+    # Function to replace the neuromodulation network
+    # by a different neuromodulation network. 
+    def change_neuromodulation_network(self, network):
+        
+        # Check if actually operating in neuromodulated mode
+        assert self.mode == "neuromodulated", "Neuromodulation network can only be set in neuromodulated mode"
+        
+        # Check if the input and output sizes of the new
+        # network are correct.
+        correct_input_size = self.neuromod_network_dims[0]
+        input_tensor = torch.rand((1, correct_input_size))
+        try:
+            output = network(input_tensor)
+            assert output.shape[1] == self.neuromod_network_dims[-1], "Neuromodulation network doesn't have correct output size"
+        except:
+            raise ValueError(f"New neuromodulation network doesn't have correct input size of {correct_input_size}")
+        
+        self.neuromod = network
+
+
+
     def forward(self, input, hx, ts):
+        # If neuromodulation is used, the input should actually be a tuple
+        # containing the policy input and the neuromodulation input.
+        # Otherwise, the input is just the policy input.
         if self.mode == "neuromodulated":
-            assert len()
+            assert isinstance(input, tuple), "Input must be a tuple (policy_input, neuromod_input)"
+            x = torch.cat([input[0], hx], 1)
+
         else:
             x = torch.cat([input, hx], 1)
-            if self.backbone_layers > 0:
-                x = self.backbone(x)
-            if self.sparsity_mask is not None:
-                ff1 = F.linear(x, self.ff1.weight * self.sparsity_mask, self.ff1.bias)
-            else:
-                ff1 = self.ff1(x)
-            if self.mode == "pure":
-                # Solution
-                new_hidden = (
-                    -self.A
-                    * torch.exp(-ts * (torch.abs(self.w_tau) + torch.abs(ff1)))
-                    * ff1
-                    + self.A
-                )
 
-                # This calculation of the tau system seems to be in accordance
-                # with equations 1, 2, and 3 in "Closed-form Continuous-time
-                # Neural Networks".
-                self.tau_system.data = 1.0 / (torch.abs(self.w_tau) + torch.abs(ff1))
+        if self.backbone_layers > 0:
+            x = self.backbone(x)
+        
+        if self.sparsity_mask is not None:
+            ff1 = F.linear(x, self.ff1.weight * self.sparsity_mask, self.ff1.bias)
+        else:
+            ff1 = self.ff1(x)
+        
+        if self.mode == "pure":
+            # Solution
+            new_hidden = (
+                -self.A
+                * torch.exp(-ts * (torch.abs(self.w_tau) + torch.abs(ff1)))
+                * ff1
+                + self.A
+            )
+
+            # This calculation of the tau system seems to be in accordance
+            # with equations 1, 2, and 3 in "Closed-form Continuous-time
+            # Neural Networks".
+            self.tau_system.data = 1.0 / (torch.abs(self.w_tau) + torch.abs(ff1))
+        elif self.mode == "neuromodulated":
+            neuromod_signal = self.neuromod(input[1])
+
+            new_hidden = (
+                -self.A
+                * torch.exp(-ts * (torch.abs(self.w_tau) + torch.abs(neuromod_signal)))
+                * ff1
+                + self.A
+            )
+
+            # This calculation of the tau system seems to be in accordance
+            # with equations 1, 2, and 3 in "Closed-form Continuous-time
+            # Neural Networks".
+            self.tau_system.data = 1.0 / (torch.abs(self.w_tau) + torch.abs(neuromod_signal))
+        else:
+            # Cfc
+            if self.sparsity_mask is not None:
+                ff2 = F.linear(x, self.ff2.weight * self.sparsity_mask, self.ff2.bias)
             else:
-                # Cfc
-                if self.sparsity_mask is not None:
-                    ff2 = F.linear(x, self.ff2.weight * self.sparsity_mask, self.ff2.bias)
-                else:
-                    ff2 = self.ff2(x)
-                ff1 = self.tanh(ff1)
-                ff2 = self.tanh(ff2)
-                t_a = self.time_a(x)
-                t_b = self.time_b(x)
-                t_interp = self.sigmoid(t_a * ts + t_b)
-                if self.mode == "no_gate":
-                    new_hidden = ff1 + t_interp * ff2
-                else:
-                    new_hidden = ff1 * (1.0 - t_interp) + t_interp * ff2
+                ff2 = self.ff2(x)
+            ff1 = self.tanh(ff1)
+            ff2 = self.tanh(ff2)
+            t_a = self.time_a(x)
+            t_b = self.time_b(x)
+            t_interp = self.sigmoid(t_a * ts + t_b)
+            if self.mode == "no_gate":
+                new_hidden = ff1 + t_interp * ff2
+            else:
+                new_hidden = ff1 * (1.0 - t_interp) + t_interp * ff2
         return new_hidden, new_hidden
