@@ -84,7 +84,6 @@ class CfCCell(nn.Module):
 
         self.mode = mode
         self.neuromod_network_dims = neuromod_network_dims
-        self.flag = False
 
         if backbone_activation == "silu":
             backbone_activation = nn.SiLU
@@ -181,13 +180,6 @@ class CfCCell(nn.Module):
         # containing the policy input and the neuromodulation input.
         # Otherwise, the input is just the policy input.
         if self.mode == "neuromodulated":
-
-            if not self.flag:
-                for w in self.neuromod.parameters():
-                    w.requires_grad = False
-                self.flag = True
-
-
             assert isinstance(input, tuple), "Input must be a tuple (policy_input, neuromod_input)"
             x = torch.cat([input[0], hx], 1)
 
