@@ -156,23 +156,35 @@ class CfCCell(nn.Module):
 
     # Function to replace the neuromodulation network
     # by a different neuromodulation network. 
-    def change_neuromodulation_network(self, network):
-        
+    def set_neuromodulation_network(self, network):
         # Check if actually operating in neuromodulated mode
         assert self.mode == "neuromodulated", "Neuromodulation network can only be set in neuromodulated mode"
-        
-        # Check if the input and output sizes of the new
-        # network are correct.
-        correct_input_size = self.neuromod_network_dims[0]
-        input_tensor = torch.rand((1, correct_input_size))
-        try:
-            output = network(input_tensor)
-            assert output.shape[1] == self.neuromod_network_dims[-1], "Neuromodulation network doesn't have correct output size"
-        except:
-            raise ValueError(f"New neuromodulation network doesn't have correct input size of {correct_input_size}")
-        
         self.neuromod = network
 
+    
+    # Function to retrieve the neuromodulation network
+    def get_neuromodulation_network(self):
+        # Check if actually operating in neuromodulated mode
+        assert self.mode == "neuromodulated", "Neuromodulation network can only be retrieved in neuromodulated mode"
+        return self.neuromod
+    
+
+    def freeze_non_neuromodulation_parameters(self):
+        assert self.mode == "neuromodulated", "Only possible in neuromodulated mode"
+        self.grad_status = {}
+        for name, param in self.named_parameters():
+            # Save the current requiries_grad status
+            self.grad_status[name] = param.requires_grad
+            # Set requires_grad to False if not neuromodulation network
+            if "neuromod" not in name:
+                param.requires_grad = False
+
+    
+    def unfreeze_non_neuromodulation_parameters(self):
+        assert self.mode == "neuromodulated", "Only possible in neuromodulated mode"
+        for name, param in self.named_parameters():
+            # Set requires_grad to the saved status
+            param.requires_grad = self.grad_status[name]
 
 
     def forward(self, input, hx, ts):
