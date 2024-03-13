@@ -36,8 +36,6 @@ class CfC(nn.Module):
         backbone_layers: Optional[int] = None,
         backbone_dropout: Optional[int] = None,
         track_tau_system: bool = False,
-        neuromod_network_dims: Optional[int] = None,
-        neuromod_network_activation: Optional[nn.Module] = None,
     ):
         """Applies a `Closed-form Continuous-time <https://arxiv.org/abs/2106.13898>`_ RNN to an input sequence.
 
@@ -80,8 +78,8 @@ class CfC(nn.Module):
                 raise ValueError(f"Cannot use backbone_layers in wired mode")
             if backbone_dropout is not None:
                 raise ValueError(f"Cannot use backbone_dropout in wired mode")
-            if neuromod_network_dims is not None:
-                raise NotImplementedError("Neuromodulation not yet supported in wired mode")
+            if self.mode == "neuromodulated":
+                raise NotImplementedError("Neuromodulated mode is not supported in wired mode")
             self.wiring = units
             self.state_size = self.wiring.units
             self.output_size = self.wiring.output_dim
@@ -105,8 +103,6 @@ class CfC(nn.Module):
                 backbone_units,
                 backbone_layers,
                 backbone_dropout,
-                neuromod_network_dims=neuromod_network_dims,
-                neuromod_network_activation=neuromod_network_activation,
             )
         self.use_mixed = mixed_memory
         if self.use_mixed:
@@ -117,7 +113,7 @@ class CfC(nn.Module):
         else:
             self.fc = nn.Linear(self.output_size, self.proj_size)
 
-    def forward(self, input, hx=None, timespans=None):
+    def forward(self, input, hx=None, timespans=None, neuromod_signal=None):
         """
 
         :param input: Input tensor of shape (L,C) in batchless mode, or (B,L,C) if batch_first was set to True and (L,B,C) if batch_first is False
@@ -128,8 +124,7 @@ class CfC(nn.Module):
         tau_tracker = []
 
         if self.mode == "neuromodulated":
-            neuromod_input = input[1]
-            input = input[0]
+            assert neuromod_signal is not None, "Neuromodulation signal must be provided"
         
         device = input.device
 
@@ -187,7 +182,7 @@ class CfC(nn.Module):
                 h_state, c_state = self.lstm(inputs, (h_state, c_state))
 
             if self.mode == "neuromodulated":
-                h_out, h_state = self.rnn_cell.forward((inputs, neuromod_input), h_state, ts)
+                h_out, h_state = self.rnn_cell.forward(inputs, h_state, ts, neuromod_signal)
             else:
                 h_out, h_state = self.rnn_cell.forward(inputs, h_state, ts)
 

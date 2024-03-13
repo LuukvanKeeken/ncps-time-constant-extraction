@@ -44,8 +44,6 @@ class CfCCell(nn.Module):
         backbone_layers=1,
         backbone_dropout=0.0,
         sparsity_mask=None,
-        neuromod_network_dims=None,
-        neuromod_network_activation=nn.Tanh,
     ):
         """A `Closed-form Continuous-time <https://arxiv.org/abs/2106.13898>`_ cell.
 
@@ -83,7 +81,6 @@ class CfCCell(nn.Module):
         )
 
         self.mode = mode
-        self.neuromod_network_dims = neuromod_network_dims
 
         if backbone_activation == "silu":
             backbone_activation = nn.SiLU
@@ -126,15 +123,7 @@ class CfCCell(nn.Module):
                 data=torch.ones(1, self.hidden_size), requires_grad=True
             )
 
-            if self.mode == "neuromodulated":
-                assert neuromod_network_dims is not None, "Neuromodulation network dimensions must be set"
-                assert neuromod_network_dims[-1] == hidden_size, "Last layer of neuromodulation network must have the same size as the hidden state"
-                
-                layer_list = []
-                for i in range(len(neuromod_network_dims) - 1):
-                    layer_list.append(nn.Linear(neuromod_network_dims[i], neuromod_network_dims[i + 1]))
-                    layer_list.append(neuromod_network_activation())
-                self.neuromod = nn.Sequential(*layer_list)
+            
         else:
             self.ff2 = nn.Linear(cat_shape, hidden_size)
             self.time_a = nn.Linear(cat_shape, hidden_size)
@@ -152,51 +141,15 @@ class CfCCell(nn.Module):
         for w in self.parameters():
             if w.dim() == 2 and w.requires_grad:
                 torch.nn.init.xavier_uniform_(w)
-
-
-    # Function to replace the neuromodulation network
-    # by a different neuromodulation network. 
-    def set_neuromodulation_network(self, network):
-        # Check if actually operating in neuromodulated mode
-        assert self.mode == "neuromodulated", "Neuromodulation network can only be set in neuromodulated mode"
-        self.neuromod = network
-
-    
-    # Function to retrieve the neuromodulation network
-    def get_neuromodulation_network(self):
-        # Check if actually operating in neuromodulated mode
-        assert self.mode == "neuromodulated", "Neuromodulation network can only be retrieved in neuromodulated mode"
-        return self.neuromod
     
 
-    def freeze_non_neuromodulation_parameters(self):
-        assert self.mode == "neuromodulated", "Only possible in neuromodulated mode"
-        self.grad_status = {}
-        for name, param in self.named_parameters():
-            # Save the current requiries_grad status
-            self.grad_status[name] = param.requires_grad
-            # Set requires_grad to False if not neuromodulation network
-            if "neuromod" not in name:
-                param.requires_grad = False
 
-    
-    def unfreeze_non_neuromodulation_parameters(self):
-        assert self.mode == "neuromodulated", "Only possible in neuromodulated mode"
-        for name, param in self.named_parameters():
-            # Set requires_grad to the saved status
-            param.requires_grad = self.grad_status[name]
-
-
-    def forward(self, input, hx, ts):
-        # If neuromodulation is used, the input should actually be a tuple
-        # containing the policy input and the neuromodulation input.
-        # Otherwise, the input is just the policy input.
+    def forward(self, input, hx, ts, neuromod_signal=None):
+        # If neuromodulation is used, the neuromodulation signal must be provided
         if self.mode == "neuromodulated":
-            assert isinstance(input, tuple), "Input must be a tuple (policy_input, neuromod_input)"
-            x = torch.cat([input[0], hx], 1)
-
-        else:
-            x = torch.cat([input, hx], 1)
+            assert neuromod_signal is not None, "Neuromodulation signal must be provided"
+        
+        x = torch.cat([input, hx], 1)
 
         if self.backbone_layers > 0:
             x = self.backbone(x)
@@ -220,7 +173,8 @@ class CfCCell(nn.Module):
             # Neural Networks".
             self.tau_system.data = 1.0 / (torch.abs(self.w_tau) + torch.abs(ff1))
         elif self.mode == "neuromodulated":
-            neuromod_signal = self.neuromod(input[1])
+            assert neuromod_signal.size == self.w_tau.size
+
 
             new_hidden = (
                 -self.A
