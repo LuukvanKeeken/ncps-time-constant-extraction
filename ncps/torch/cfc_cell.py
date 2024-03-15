@@ -173,7 +173,7 @@ class CfCCell(nn.Module):
             # Neural Networks".
             self.tau_system.data = 1.0 / (torch.abs(self.w_tau) + torch.abs(ff1))
         elif self.mode == "neuromodulated":
-            assert neuromod_signal.size == self.w_tau.size
+            assert neuromod_signal.shape == self.w_tau.shape
 
 
             new_hidden = (

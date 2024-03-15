@@ -181,10 +181,8 @@ class CfC(nn.Module):
             if self.use_mixed:
                 h_state, c_state = self.lstm(inputs, (h_state, c_state))
 
-            if self.mode == "neuromodulated":
-                h_out, h_state = self.rnn_cell.forward(inputs, h_state, ts, neuromod_signal)
-            else:
-                h_out, h_state = self.rnn_cell.forward(inputs, h_state, ts)
+        
+            h_out, h_state = self.rnn_cell.forward(inputs, h_state, ts, neuromod_signal)
 
             if self.track_tau_system:
                 tau_tracker.append(self.rnn_cell.tau_system.squeeze().tolist())
