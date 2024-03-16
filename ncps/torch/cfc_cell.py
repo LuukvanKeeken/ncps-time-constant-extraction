@@ -173,7 +173,10 @@ class CfCCell(nn.Module):
             # Neural Networks".
             self.tau_system.data = 1.0 / (torch.abs(self.w_tau) + torch.abs(ff1))
         elif self.mode == "neuromodulated":
-            assert neuromod_signal.shape == self.w_tau.shape
+            try:
+                torch.broadcast_tensors(neuromod_signal, self.w_tau)
+            except Exception as e:
+                raise AssertionError("Neuromodulation signal and w_tau are not broadcastable")
 
 
             new_hidden = (
