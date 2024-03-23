@@ -78,7 +78,7 @@ class CfC(nn.Module):
                 raise ValueError(f"Cannot use backbone_layers in wired mode")
             if backbone_dropout is not None:
                 raise ValueError(f"Cannot use backbone_dropout in wired mode")
-            if self.mode == "neuromodulated":
+            if self.mode == "neuromodulated" or self.mode == "only_neuromodulated":
                 raise NotImplementedError("Neuromodulated mode is not supported in wired mode")
             self.wiring = units
             self.state_size = self.wiring.units
@@ -123,7 +123,7 @@ class CfC(nn.Module):
         """
         tau_tracker = []
 
-        if self.mode == "neuromodulated":
+        if self.mode == "neuromodulated" or self.mode == "only_neuromodulated":
             assert neuromod_signal is not None, "Neuromodulation signal must be provided"
         
         device = input.device

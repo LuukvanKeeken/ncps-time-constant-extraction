@@ -66,7 +66,7 @@ class CfCCell(nn.Module):
 
         self.input_size = input_size
         self.hidden_size = hidden_size
-        allowed_modes = ["default", "pure", "no_gate", "neuromodulated"]
+        allowed_modes = ["default", "pure", "no_gate", "neuromodulated", "only_neuromodulated"]
         if mode not in allowed_modes:
             raise ValueError(
                 f"Unknown mode '{mode}', valid options are {str(allowed_modes)}"
@@ -115,7 +115,7 @@ class CfCCell(nn.Module):
         )
 
         self.ff1 = nn.Linear(cat_shape, hidden_size)
-        if self.mode == "pure" or self.mode == "neuromodulated":
+        if self.mode == "pure" or self.mode == "neuromodulated" or self.mode == "only_neuromodulated":
             self.w_tau = torch.nn.Parameter(
                 data=torch.zeros(1, self.hidden_size), requires_grad=True
             )
@@ -146,7 +146,7 @@ class CfCCell(nn.Module):
 
     def forward(self, input, hx, ts, neuromod_signal=None):
         # If neuromodulation is used, the neuromodulation signal must be provided
-        if self.mode == "neuromodulated":
+        if self.mode == "neuromodulated" or self.mode == "only_neuromodulated":
             assert neuromod_signal is not None, "Neuromodulation signal must be provided"
         
         x = torch.cat([input, hx], 1)
@@ -190,6 +190,24 @@ class CfCCell(nn.Module):
             # with equations 1, 2, and 3 in "Closed-form Continuous-time
             # Neural Networks".
             self.tau_system.data = 1.0 / (torch.abs(self.w_tau) + torch.abs(neuromod_signal))
+        elif self.mode == "only_neuromodulated":
+            # try:
+            #     torch.broadcast_tensors(neuromod_signal, self.w_tau)
+            # except Exception as e:
+            #     raise AssertionError("Neuromodulation signal and w_tau are not broadcastable")
+
+
+            new_hidden = (
+                -self.A
+                * torch.exp(-ts * (torch.abs(neuromod_signal)))
+                * ff1
+                + self.A
+            )
+
+            # This calculation of the tau system seems to be in accordance
+            # with equations 1, 2, and 3 in "Closed-form Continuous-time
+            # Neural Networks".
+            self.tau_system.data = 1.0 / (torch.abs(neuromod_signal))
         else:
             # Cfc
             if self.sparsity_mask is not None:
