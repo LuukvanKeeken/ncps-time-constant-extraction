@@ -133,7 +133,10 @@ class CfCCell(nn.Module):
                 layer_list = []
                 for i in range(len(neuromod_network_dims) - 1):
                     layer_list.append(nn.Linear(neuromod_network_dims[i], neuromod_network_dims[i + 1]))
-                    layer_list.append(neuromod_network_activation())
+                    if i < len(neuromod_network_dims)-2:
+                        layer_list.append(torch.nn.Tanh())
+                    else:
+                        layer_list.append(torch.nn.ReLU())
                 self.neuromod = nn.Sequential(*layer_list)
         else:
             self.ff2 = nn.Linear(cat_shape, hidden_size)
