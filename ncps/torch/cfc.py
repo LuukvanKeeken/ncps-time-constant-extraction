@@ -16,7 +16,7 @@
 import torch
 from torch import nn
 from typing import Optional, Union
-import ncps_time_constant_extraction.ncps as ncps
+import neuromodulated_ncps.ncps as ncps
 from . import CfCCell, WiredCfCCell
 from .lstm import LSTMCell
 
@@ -68,7 +68,8 @@ class CfC(nn.Module):
         self.batch_first = batch_first
         self.return_sequences = return_sequences
         self.track_tau_system = track_tau_system
-
+        self.mode = mode
+        
         if isinstance(units, ncps.wirings.Wiring):
             self.wired_mode = True
             if backbone_units is not None:
@@ -77,7 +78,8 @@ class CfC(nn.Module):
                 raise ValueError(f"Cannot use backbone_layers in wired mode")
             if backbone_dropout is not None:
                 raise ValueError(f"Cannot use backbone_dropout in wired mode")
-            # self.rnn_cell = WiredCfCCell(input_size, wiring_or_units)
+            if self.mode == "neuromodulated" or self.mode == "only_neuromodulated":
+                raise NotImplementedError("Neuromodulated mode is not supported in wired mode")
             self.wiring = units
             self.state_size = self.wiring.units
             self.output_size = self.wiring.output_dim
@@ -111,7 +113,7 @@ class CfC(nn.Module):
         else:
             self.fc = nn.Linear(self.output_size, self.proj_size)
 
-    def forward(self, input, hx=None, timespans=None):
+    def forward(self, input, hx=None, timespans=None, neuromod_signal=None):
         """
 
         :param input: Input tensor of shape (L,C) in batchless mode, or (B,L,C) if batch_first was set to True and (L,B,C) if batch_first is False
@@ -121,7 +123,11 @@ class CfC(nn.Module):
         """
         tau_tracker = []
 
+        if self.mode == "neuromodulated" or self.mode == "only_neuromodulated":
+            assert neuromod_signal is not None, "Neuromodulation signal must be provided"
+        
         device = input.device
+
         is_batched = input.dim() == 3
         batch_dim = 0 if self.batch_first else 1
         seq_dim = 1 if self.batch_first else 0
@@ -174,7 +180,9 @@ class CfC(nn.Module):
 
             if self.use_mixed:
                 h_state, c_state = self.lstm(inputs, (h_state, c_state))
-            h_out, h_state = self.rnn_cell.forward(inputs, h_state, ts)
+
+        
+            h_out, h_state = self.rnn_cell.forward(inputs, h_state, ts, neuromod_signal)
 
             if self.track_tau_system:
                 tau_tracker.append(self.rnn_cell.tau_system.squeeze().tolist())
