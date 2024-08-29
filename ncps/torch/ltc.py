@@ -15,9 +15,9 @@ import numpy as np
 import torch
 from torch import nn
 from typing import Optional, Union
-from ncps_time_constant_extraction.ncps.wirings import Wiring, FullyConnected
-from ncps_time_constant_extraction.ncps.torch.ltc_cell import LTCCell
-from ncps_time_constant_extraction.ncps.torch.lstm import LSTMCell
+from neuromodulated_ncps.ncps.wirings import Wiring, FullyConnected
+from neuromodulated_ncps.ncps.torch.ltc_cell import LTCCell
+from neuromodulated_ncps.ncps.torch.lstm import LSTMCell
 
 
 class LTC(nn.Module):

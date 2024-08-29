@@ -16,7 +16,7 @@
 import torch
 from torch import nn
 from typing import Optional, Union
-import ncps_time_constant_extraction.ncps as ncps
+import neuromodulated_ncps.ncps as ncps
 from . import CfCCell, WiredCfCCell
 from .lstm import LSTMCell
 
